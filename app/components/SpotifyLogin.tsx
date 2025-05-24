@@ -33,6 +33,7 @@ export const SCOPES = [
 	"user-top-read",
 	"playlist-read-private",
 	"playlist-read-collaborative",
+	"user-library-read",
 ];
 
 export function SpotifyLogin() {
@@ -47,7 +48,6 @@ export function SpotifyLogin() {
 			return;
 		}
 
-		const scope = "user-read-private user-read-email";
 		const authUrl = new URL("https://accounts.spotify.com/authorize");
 
 		window.localStorage.setItem("code_verifier", codeVerifier);
@@ -55,7 +55,7 @@ export function SpotifyLogin() {
 		const params = {
 			response_type: "code",
 			client_id: SPOTIFY_CLIENT_ID,
-			scope,
+			scope: SCOPES.join(" "),
 			code_challenge_method: "S256",
 			code_challenge: codeChallenge,
 			redirect_uri: REDIRECT_URI,
