@@ -20,8 +20,7 @@ const base64encode = (input: ArrayBuffer) => {
 };
 
 const codeVerifier = generateRandomString(64);
-const hashed = await sha256(codeVerifier);
-const codeChallenge = base64encode(hashed);
+const getCodeChallenge = async () => base64encode(await sha256(codeVerifier));
 
 export const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
 export const REDIRECT_URI =
@@ -40,7 +39,7 @@ export function SpotifyLogin() {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const handleLogin = () => {
+	const handleLogin = async () => {
 		console.log(import.meta.env);
 
 		if (!SPOTIFY_CLIENT_ID) {
@@ -57,7 +56,7 @@ export function SpotifyLogin() {
 			client_id: SPOTIFY_CLIENT_ID,
 			scope: SCOPES.join(" "),
 			code_challenge_method: "S256",
-			code_challenge: codeChallenge,
+			code_challenge: await getCodeChallenge(),
 			redirect_uri: REDIRECT_URI,
 		};
 
