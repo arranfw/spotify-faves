@@ -1,11 +1,142 @@
 /* PICKER STATE OBJECT */
 
-export function PickerState(options) {
+interface PickerStateOptions {
+	items: string[];
+	getBatchSize?: (currentSize: number, settings: PickerSettings) => number;
+	shouldIncludeItem?: (identifier: string, settings: PickerSettings) => boolean;
+	getFilteredItems?: (settings: PickerSettings) => string[];
+	defaultSettings?: PickerSettings;
+}
+
+interface PickerSettings {
+	minBatchSize?: number;
+	maxBatchSize?: number;
+	[key: string]: unknown;
+}
+
+interface PickerStateArrays {
+	eliminated: Array<{ id: string; eliminatedBy: string[] }>;
+	survived: string[];
+	current: string[];
+	evaluating: string[];
+	favorites: string[];
+}
+
+interface PickerState {
+	options: PickerStateOptions;
+	settings: PickerSettings;
+	items: string[];
+	arrays: PickerStateArrays;
+	batchSize: number;
+	missingItems?: string[];
+	extraItems?: string[];
+	getState(): {
+		eliminated: Array<{ id: string; eliminatedBy: string[] }>;
+		survived: string[];
+		current: string[];
+		evaluating: string[];
+		favorites: string[];
+		settings: PickerSettings;
+	};
+	initialize(settings?: PickerSettings): void;
+	restoreState(state: PickerStateData): void;
+	reset(): void;
+	setSettings(settings: PickerSettings): void;
+	setFavorites(favorites: string[]): void;
+	findByIdentifier(
+		identifier: string,
+		array: Array<string | { id: string }>,
+	): number;
+	shouldIncludeItem(identifier: string, settings: PickerSettings): boolean;
+	getFilteredItems(): string[];
+	findInArray(
+		identifier: string,
+		arrayName: keyof PickerStateArrays,
+	): string | { id: string } | null;
+	getBatchSize(currentSize: number): number;
+	resetBatchSize(): void;
+	validate(): void;
+	pick(picked: string[]): void;
+	pass(): void;
+	removeEliminatedBy(i: number, j: number): void;
+	removeFromEliminated(item: string): void;
+	addToFavorites(item: string): void;
+	nextBatch(): void;
+	nextRound(): void;
+}
+
+interface PickerItem {
+	id: string;
+	shortcode?: string;
+	[key: string]: unknown;
+}
+
+interface PickerOptions {
+	items: PickerItem[];
+	historyLength?: number;
+	favoritesQueryParam?: string;
+	defaultSettings?: PickerSettings;
+	getBatchSize?: (currentSize: number, settings: PickerSettings) => number;
+	shouldIncludeItem?: (item: PickerItem, settings: PickerSettings) => boolean;
+	getFilteredItems?: (settings: PickerSettings) => string[];
+	modifyState?: (state: PickerStateData) => PickerStateData;
+	onLoadState?: (missingItems: string[], extraItems: string[]) => void;
+	saveState?: () => void;
+	loadState?: () => PickerStateData | null;
+	localStorageKey?: string;
+	settingsFromFavorites?: (favorites: PickerItem[]) => PickerSettings;
+	shortcodeLength?: number;
+}
+
+interface PickerStateData {
+	eliminated: Array<{ id: string; eliminatedBy: string[] }>;
+	survived: string[];
+	current: string[];
+	evaluating: string[];
+	favorites: string[];
+	settings?: PickerSettings;
+}
+
+interface Picker {
+	itemMap: Record<string, PickerItem>;
+	options: PickerOptions;
+	history: PickerStateData[];
+	historyPos: number;
+	state: PickerState;
+	initialFavorites?: string[];
+	getArray(arrayName: keyof PickerStateArrays): PickerItem[];
+	getFavorites(): PickerItem[];
+	getEvaluating(): PickerItem[];
+	getSettings(): PickerSettings;
+	getSharedFavorites(): PickerItem[] | null;
+	getShortcodeString(): string;
+	getShortcodeLink(): string;
+	parseShortcodeString(shortcodeString: string): string[];
+	pushHistory(): void;
+	canUndo(): boolean;
+	canRedo(): boolean;
+	undo(): void;
+	redo(): void;
+	resetToFavorites(favorites: string[], useSettings?: PickerSettings): void;
+	saveState(): void;
+	loadState(): PickerStateData | null;
+	isUntouched(): boolean;
+	hasItems(): boolean;
+	pick(picked: string[]): void;
+	pass(): void;
+	reset(): void;
+	setSettings(settings: PickerSettings): void;
+	setFavorites(favorites: string[]): void;
+	forEachItem(func: (identifier: string) => unknown): unknown;
+	mapItems(identifiers: string[]): PickerItem[];
+}
+
+export function PickerState(this: PickerState, options: PickerStateOptions) {
 	if (!options.items) {
 		console.error("No items specified for PickerState!");
 		return;
 	}
-	this.options = copyObject(options);
+	this.options = { ...options };
 }
 
 /* INITIALIZATION AND SERIALIZATION */
@@ -26,7 +157,7 @@ PickerState.prototype.getState = function () {
 	};
 };
 
-PickerState.prototype.initialize = function (settings) {
+PickerState.prototype.initialize = function (settings?: PickerSettings) {
 	/**
 	 * Initializes the PickerState according to the given settings
 	 * (or the default settings if no settings are provided).
@@ -48,23 +179,22 @@ PickerState.prototype.initialize = function (settings) {
 	this.nextBatch();
 };
 
-PickerState.prototype.restoreState = function (state) {
+PickerState.prototype.restoreState = function (state: PickerStateData) {
 	/**
 	 * Sets the PickerState to the given dehydrated state.
 	 */
-	this.settings = copyObject(
-		this.options.defaultSettings || {},
-		state.settings || {},
-	);
-
+	this.settings = {
+		...(this.options.defaultSettings || {}),
+		...(state.settings || {}),
+	};
 	this.items = this.getFilteredItems();
 
 	this.arrays = {
-		eliminated: copyArray(state.eliminated),
-		survived: copyArray(state.survived),
-		current: copyArray(state.current),
-		evaluating: copyArray(state.evaluating),
-		favorites: copyArray(state.favorites),
+		eliminated: [...state.eliminated],
+		survived: [...state.survived],
+		current: [...state.current],
+		evaluating: [...state.evaluating],
+		favorites: [...state.favorites],
 	};
 	this.batchSize = this.arrays.evaluating.length;
 
@@ -81,7 +211,7 @@ PickerState.prototype.reset = function () {
 
 /* PUBLIC SETTERS */
 
-PickerState.prototype.setSettings = function (settings) {
+PickerState.prototype.setSettings = function (settings: PickerSettings) {
 	/**
 	 * Sets the settings.
 	 */
@@ -92,19 +222,22 @@ PickerState.prototype.setSettings = function (settings) {
 	this.resetBatchSize();
 };
 
-PickerState.prototype.setFavorites = function (favorites) {
+PickerState.prototype.setFavorites = function (favorites: string[]): void {
 	/**
 	 * Overwrites the found favorites list with the given one.
 	 * Since it runs validate, it should be fine if this changes the
 	 * actual contents of the list.
 	 */
-	this.arrays.favorites = favorites;
+	this.arrays.favorites = [...favorites];
 	this.validate();
 };
 
 /* STATE UTILITY FUNCTIONS */
 
-PickerState.prototype.findByIdentifier = (identifier, array) => {
+PickerState.prototype.findByIdentifier = (
+	identifier: string,
+	array: Array<string | { id: string }>,
+): number => {
 	/**
 	 * Searches for the given item identifier in the given array and
 	 * returns the index at which that identifier is found (or -1 if it is
@@ -112,14 +245,20 @@ PickerState.prototype.findByIdentifier = (identifier, array) => {
 	 * objects with an id property (e.g. the eliminated array).
 	 */
 	for (let i = 0; i < array.length; i++) {
-		if (array[i] === identifier || array[i].id === identifier) {
+		if (
+			array[i] === identifier ||
+			(array[i] as { id: string }).id === identifier
+		) {
 			return i;
 		}
 	}
 	return -1;
 };
 
-PickerState.prototype.shouldIncludeItem = function (identifier, settings) {
+PickerState.prototype.shouldIncludeItem = function (
+	identifier: string,
+	settings: PickerSettings,
+): boolean {
 	/**
 	 * Returns true if this item should be included in the picker
 	 * according to the current settings.
@@ -128,33 +267,35 @@ PickerState.prototype.shouldIncludeItem = function (identifier, settings) {
 		return this.options.getFilteredItems(settings).indexOf(identifier) !== -1;
 	}
 	if (this.options.shouldIncludeItem) {
-		return this.options.shouldIncludeItem(identifier, settings);
+		const result = this.options.shouldIncludeItem(identifier, settings);
+		return typeof result === "boolean" ? result : false;
 	}
 	return true;
 };
 
-PickerState.prototype.getFilteredItems = function () {
+PickerState.prototype.getFilteredItems = function (
+	settings: PickerSettings,
+): string[] {
 	/**
 	 * Returns a list of item identifiers that match the given
 	 * settings.
 	 */
 	if (this.options.getFilteredItems) {
-		return this.options.getFilteredItems(this.settings);
+		return this.options.getFilteredItems(settings);
 	}
-	const result = [];
+	const result: string[] = [];
 	for (let i = 0; i < this.options.items.length; i++) {
-		if (this.shouldIncludeItem(this.options.items[i], this.settings)) {
+		if (this.shouldIncludeItem(this.options.items[i], settings)) {
 			result.push(this.options.items[i]);
 		}
 	}
 	return result;
 };
 
-PickerState.prototype.findInArray = function (identifier, arrayName) {
-	/**
-	 * If the given identifier is found in the given array of the state,
-	 * return that entry. Otherwise, return null.
-	 */
+PickerState.prototype.findInArray = function (
+	identifier: string,
+	arrayName: keyof PickerStateArrays,
+): string | { id: string } | null {
 	const index = this.findByIdentifier(identifier, this.arrays[arrayName]);
 	if (index !== -1) {
 		return this.arrays[arrayName][index];
@@ -162,7 +303,7 @@ PickerState.prototype.findInArray = function (identifier, arrayName) {
 	return null;
 };
 
-PickerState.prototype.getBatchSize = function (currentSize) {
+PickerState.prototype.getBatchSize = function (currentSize: number): number {
 	/**
 	 * Returns the number of items that should ideally be displayed at a
 	 * time, given the whole round is currentSize items.
@@ -199,19 +340,19 @@ PickerState.prototype.validate = function () {
 	 */
 	const expectedItems = this.getFilteredItems();
 
-	const missingItems = [];
-	const extraItems = [];
+	const missingItems: string[] = [];
+	const extraItems: string[] = [];
 	const survived = this.arrays.survived;
 	const eliminated = this.arrays.eliminated;
 	const evaluating = this.arrays.evaluating;
 	const current = this.arrays.current;
 	const favorites = this.arrays.favorites;
 	const arrays = [favorites, survived, eliminated, current, evaluating];
-	let identifier;
+	let identifier: string;
 
-	const verifyObject = {};
-	let i;
-	let j;
+	const verifyObject: Record<string, boolean> = {};
+	let i: number;
+	let j: number;
 
 	for (i = 0; i < expectedItems.length; i++) {
 		verifyObject[expectedItems[i]] = false;
@@ -298,13 +439,13 @@ PickerState.prototype.validate = function () {
 
 /* MAIN PICKER LOGIC */
 
-PickerState.prototype.pick = function (picked) {
+PickerState.prototype.pick = function (picked: string[]) {
 	/**
 	 * Picks the given items from the current evaluating batch, moving
 	 * them into the survived array and the others into the eliminated
 	 * array.
 	 */
-	let i;
+	let i: number;
 	const evaluating = this.arrays.evaluating;
 	const survived = this.arrays.survived;
 	const eliminated = this.arrays.eliminated;
@@ -321,6 +462,7 @@ PickerState.prototype.pick = function (picked) {
 			eliminated.push({ id: evaluating[i], eliminatedBy: picked.slice(0) });
 		}
 	}
+
 	this.arrays.evaluating = [];
 	this.nextBatch();
 };
@@ -333,7 +475,7 @@ PickerState.prototype.pass = function () {
 	this.pick(this.arrays.evaluating);
 };
 
-PickerState.prototype.removeEliminatedBy = function (i, j) {
+PickerState.prototype.removeEliminatedBy = function (i: number, j: number) {
 	/**
 	 * Removes the jth item from the eliminatedBy array of the ith
 	 * item in the eliminated array, restoring the item to the
@@ -350,13 +492,13 @@ PickerState.prototype.removeEliminatedBy = function (i, j) {
 	}
 };
 
-PickerState.prototype.removeFromEliminated = function (item) {
+PickerState.prototype.removeFromEliminated = function (item: string) {
 	/**
 	 * Remove this item from all eliminatedBy lists, restoring any
 	 * items left with empty eliminatedBy lists to the survived array.
 	 */
-	let i;
-	let idx;
+	let i: number;
+	let idx: number;
 	const eliminated = this.arrays.eliminated;
 
 	// Find items that were eliminated by this item.
@@ -370,7 +512,7 @@ PickerState.prototype.removeFromEliminated = function (item) {
 	}
 };
 
-PickerState.prototype.addToFavorites = function (item) {
+PickerState.prototype.addToFavorites = function (item: string) {
 	/**
 	 * Add the given item (identifier) to favorites and restore
 	 * the items eliminated by it to survived.
@@ -418,7 +560,7 @@ PickerState.prototype.nextRound = function () {
 
 /* PICKER OBJECT */
 
-export function Picker(options) {
+export function Picker(this: Picker, options: PickerOptions) {
 	if (!(this instanceof Picker)) {
 		return new Picker(options);
 	}
@@ -429,13 +571,11 @@ export function Picker(options) {
 	}
 
 	this.itemMap = {};
-	this.options = copyObject(
-		{
-			historyLength: 3,
-			favoritesQueryParam: "favs",
-		},
-		options,
-	);
+	this.options = {
+		historyLength: 3,
+		favoritesQueryParam: "favs",
+		...options,
+	};
 
 	this.history = [];
 	this.historyPos = -1;
@@ -449,7 +589,9 @@ export function Picker(options) {
 			);
 			return;
 		}
-		if (this.itemMap.hasOwn(options.items[i].id)) {
+		if (
+			Object.prototype.hasOwnProperty.call(this.itemMap, options.items[i].id)
+		) {
 			console.error(
 				`You have more than one item with the same ID (${options.items[i].id})! Please ensure the IDs of your items are unique.`,
 			);
@@ -458,7 +600,7 @@ export function Picker(options) {
 		if (
 			options.shortcodeLength &&
 			(!options.items[i].shortcode ||
-				options.items[i].shortcode.length !== options.shortcodeLength)
+				options.items[i].shortcode?.length !== options.shortcodeLength)
 		) {
 			console.error(
 				`You have defined a shortcode length of ${options.shortcodeLength}; however, you have an item with a shortcode that does not match this length (${options.items[i].shortcode}). The shortcode functionality only works if the item shortcodes are of a consistent length.`,
@@ -473,13 +615,18 @@ export function Picker(options) {
 
 	/* PICKER INITIALIZATION */
 
-	const pickerStateOptions = {
+	const pickerStateOptions: PickerStateOptions = {
 		items: map(options.items, (item) => item.id),
 		getBatchSize: options.getBatchSize,
 		shouldIncludeItem:
 			options.shouldIncludeItem &&
-			((identifier, settings) =>
-				options.shouldIncludeItem(this.itemMap[identifier], settings)),
+			((identifier: string, settings: PickerSettings) => {
+				const result = options.shouldIncludeItem?.(
+					this.itemMap[identifier],
+					settings,
+				);
+				return typeof result === "boolean" ? result : false;
+			}),
 		getFilteredItems: options.getFilteredItems,
 		defaultSettings: defaultSettings,
 	};
@@ -496,10 +643,11 @@ export function Picker(options) {
 		savedState = null;
 	}
 
-	this.state = new PickerState(pickerStateOptions);
+	this.state = Object.create(PickerState.prototype);
+	PickerState.call(this.state, pickerStateOptions);
 
 	if (savedState) {
-		this.state.restoreState(savedState, defaultSettings);
+		this.state.restoreState(savedState);
 		if (options.onLoadState) {
 			options.onLoadState.call(
 				this,
@@ -516,40 +664,26 @@ export function Picker(options) {
 
 /* GETTERS */
 
-Picker.prototype.getArray = function (arrayName) {
-	/**
-	 * Gets the full list of items in the given array.
-	 */
+Picker.prototype.getArray = function (
+	arrayName: keyof PickerStateArrays,
+): PickerItem[] {
 	return this.mapItems(this.state.arrays[arrayName]);
 };
 
-Picker.prototype.getFavorites = function () {
-	/**
-	 * Gets the current favorite list.
-	 */
+Picker.prototype.getFavorites = function (): PickerItem[] {
 	return this.getArray("favorites");
 };
 
-Picker.prototype.getEvaluating = function () {
-	/**
-	 * Gets the current evaluating list.
-	 */
+Picker.prototype.getEvaluating = function (): PickerItem[] {
 	return this.getArray("evaluating");
 };
 
-Picker.prototype.getSettings = function () {
-	/**
-	 * Gets the state's current settings.
-	 */
+Picker.prototype.getSettings = function (): PickerSettings {
 	return this.state.settings;
 };
 
-Picker.prototype.getSharedFavorites = function () {
-	/**
-	 * Gets the shared favorite list.
-	 */
-	let query;
-
+Picker.prototype.getSharedFavorites = function (): PickerItem[] | null {
+	let query: Record<string, string | boolean>;
 	if (
 		window.location.search &&
 		this.options.favoritesQueryParam &&
@@ -557,7 +691,9 @@ Picker.prototype.getSharedFavorites = function () {
 	) {
 		query = parseQueryString(window.location.search.substring(1));
 		return this.mapItems(
-			this.parseShortcodeString(query[this.options.favoritesQueryParam]) || [],
+			this.parseShortcodeString(
+				String(query[this.options.favoritesQueryParam] || ""),
+			) || [],
 		);
 	}
 	return null;
@@ -579,19 +715,29 @@ Picker.prototype.getShortcodeLink = function () {
 	return `?${this.options.favoritesQueryParam}=${this.getShortcodeString()}`;
 };
 
-Picker.prototype.parseShortcodeString = function (shortcodeString) {
-	const favorites = [];
-	let i;
-	let shortcode;
-	const shortcodeMap = {};
-	const favoriteMap = {};
+Picker.prototype.parseShortcodeString = function (shortcodeString: string) {
+	const favorites: string[] = [];
+	let i: number;
+	let shortcode: string;
+	const shortcodeMap: Record<string, string> = {};
+	const favoriteMap: Record<string, boolean> = {};
 
-	this.forEachItem((identifier) => {
-		shortcodeMap[this.itemMap[identifier].shortcode] = identifier;
+	this.forEachItem((identifier: string) => {
+		const item = this.itemMap[identifier];
+		if (item.shortcode) {
+			shortcodeMap[item.shortcode] = identifier;
+		}
 	});
 
-	for (i = 0; i < shortcodeString.length; i += this.options.shortcodeLength) {
-		shortcode = shortcodeString.substring(i, i + this.options.shortcodeLength);
+	for (
+		i = 0;
+		i < shortcodeString.length;
+		i += this.options.shortcodeLength || 0
+	) {
+		shortcode = shortcodeString.substring(
+			i,
+			i + (this.options.shortcodeLength || 0),
+		);
 		if (shortcode in shortcodeMap) {
 			if (!favoriteMap[shortcodeMap[shortcode]]) {
 				favorites.push(shortcodeMap[shortcode]);
@@ -656,20 +802,12 @@ Picker.prototype.redo = function () {
 	this.saveState();
 };
 
-Picker.prototype.resetToFavorites = function (favorites, useSettings) {
-	/**
-	 * Creates a clean state with the items given in favorites (as
-	 * identifiers) as found favorites.
-	 *
-	 * If useSettings is given, then those will be the settings used and
-	 * any favorites that don't fit the parameters will be discarded.
-	 * Otherwise, the settings will be set by the settingsFromFavorites
-	 * option, or set to the default otherwise.
-	 */
-	const finalFavorites = [];
-
+Picker.prototype.resetToFavorites = function (
+	favorites: string[],
+	useSettings?: PickerSettings,
+): void {
+	const finalFavorites: string[] = [];
 	for (let i = 0; i < favorites.length; i++) {
-		// Only add the item if it matches the settings (or if we don't have any given settings)
 		if (
 			!useSettings ||
 			this.state.shouldIncludeItem(favorites[i], useSettings)
@@ -677,21 +815,20 @@ Picker.prototype.resetToFavorites = function (favorites, useSettings) {
 			finalFavorites.push(favorites[i]);
 		}
 	}
-
-	if (!useSettings) {
-		// If we don't have any given settings, then set the settings according to the favorites instead
-		if (this.options.settingsFromFavorites) {
-			useSettings = copyObject(
+	let settingsToUse = useSettings;
+	if (!settingsToUse) {
+		if (this.options.settingsFromFavorites && this.options.defaultSettings) {
+			settingsToUse = copyObject(
 				this.options.defaultSettings,
 				this.options.settingsFromFavorites(this.mapItems(favorites)),
 			);
+		} else if (this.options.defaultSettings) {
+			settingsToUse = copyObject(this.options.defaultSettings);
 		} else {
-			useSettings = copyObject(this.options.defaultSettings);
+			settingsToUse = {};
 		}
 	}
-
-	// This should set the entire state properly.
-	this.state.initialize(useSettings);
+	this.state.initialize(settingsToUse);
 	this.state.setFavorites(finalFavorites);
 	this.initialFavorites = finalFavorites;
 	this.pushHistory();
@@ -713,16 +850,14 @@ Picker.prototype.saveState = function () {
 	}
 };
 
-Picker.prototype.loadState = function () {
-	/**
-	 * Returns the state stored in localStorage, if there is one.
-	 */
-	let state;
+Picker.prototype.loadState = function (): PickerStateData | null {
+	let state: PickerStateData | null = null;
 	if (this.options.loadState) {
 		state = this.options.loadState.call(this);
 	} else if (localStorage && JSON && this.options.localStorageKey) {
 		try {
-			state = JSON.parse(localStorage.getItem(this.options.localStorageKey));
+			const raw = localStorage.getItem(this.options.localStorageKey);
+			state = raw ? JSON.parse(raw) : null;
 		} catch (e) {
 			return null;
 		}
@@ -736,7 +871,7 @@ Picker.prototype.isUntouched = function () {
 	 * completely clean state or one that only has found favorites
 	 * matching the state's initial favorites).
 	 */
-	let i;
+	let i: number;
 	const arrays = this.state.arrays;
 	const initialFavorites = this.initialFavorites || [];
 
@@ -774,7 +909,7 @@ Picker.prototype.hasItems = function () {
 
 /* ACTIONS */
 
-Picker.prototype.pick = function (picked) {
+Picker.prototype.pick = function (picked: string[]) {
 	this.state.pick(picked);
 	this.pushHistory();
 };
@@ -801,15 +936,17 @@ Picker.prototype.setFavorites = function (favorites) {
 
 /* PICKER UTILITY FUNCTIONS */
 
-Picker.prototype.forEachItem = function (func) {
+Picker.prototype.forEachItem = function (
+	func: (identifier: string) => unknown,
+) {
 	/**
 	 * Executes func for each identifier in the picker's item map.
 	 */
-	let identifier;
-	let result;
+	let identifier: string;
+	let result: unknown;
 
 	for (identifier in this.itemMap) {
-		if (this.itemMap.hasOwn(identifier)) {
+		if (Object.prototype.hasOwnProperty.call(this.itemMap, identifier)) {
 			result = func(identifier);
 			if (result) {
 				return result;
@@ -818,40 +955,41 @@ Picker.prototype.forEachItem = function (func) {
 	}
 };
 
-Picker.prototype.mapItems = function (identifiers) {
-	return map(identifiers, (identifier) => this.itemMap[identifier]);
+Picker.prototype.mapItems = function (identifiers: string[]): PickerItem[] {
+	return map(identifiers, (identifier) => {
+		const item = this.itemMap[identifier];
+		if (typeof item === "object" && item !== null && "id" in item) {
+			return item as PickerItem;
+		}
+		throw new Error("Invalid item in mapItems");
+	});
 };
 
 /* GENERAL UTILITY FUNCTIONS */
 
-function isState(state) {
-	/**
-	 * Returns true if the given state object has all the expected
-	 * properties (and can thus safely be passed into restoreState).
-	 */
-	return (
+const isState = (state: unknown): boolean =>
+	Boolean(
 		state &&
-		typeof state === "object" &&
-		Array.isArray(state.eliminated) &&
-		Array.isArray(state.survived) &&
-		Array.isArray(state.current) &&
-		Array.isArray(state.evaluating) &&
-		Array.isArray(state.favorites) &&
-		(!state.settings || typeof state.settings === "object")
+			typeof state === "object" &&
+			Array.isArray((state as PickerStateData).eliminated) &&
+			Array.isArray((state as PickerStateData).survived) &&
+			Array.isArray((state as PickerStateData).current) &&
+			Array.isArray((state as PickerStateData).evaluating) &&
+			Array.isArray((state as PickerStateData).favorites) &&
+			(!(state as PickerStateData).settings ||
+				typeof (state as PickerStateData).settings === "object"),
 	);
-}
 
-function copyArray(array) {
-	/**
-	 * Returns a deep copy of the given data array.
-	 */
-	const result = [];
+function copyArray<T>(array: T[]): T[] {
+	const result: T[] = [];
 	for (let i = 0; i < array.length; i++) {
 		if (array[i] && typeof array[i] === "object") {
 			if (Array.isArray(array[i])) {
-				result[i] = copyArray(array[i]);
+				result[i] = copyArray(array[i] as unknown[]) as unknown as T;
 			} else {
-				result[i] = copyObject(array[i]);
+				result[i] = copyObject(
+					array[i] as Record<string, unknown>,
+				) as unknown as T;
 			}
 		} else {
 			result[i] = array[i];
@@ -860,26 +998,26 @@ function copyArray(array) {
 	return result;
 }
 
-function copyObject(...args) {
-	/**
-	 * Returns a deep copy of the given object(s), with properties of later
-	 * objects overriding those of earlier objects.
-	 */
-	const result = {};
-	let a;
-	let key;
+function copyObject<T extends Record<string, unknown>>(...args: T[]): T {
+	const result = {} as T;
+	let a: number;
+	let key: string;
 
 	for (a = 0; a < args.length; a++) {
 		for (key in args[a]) {
-			if (args[a].hasOwn(key)) {
+			if (Object.prototype.hasOwnProperty.call(args[a], key)) {
 				if (args[a][key] && typeof args[a][key] === "object") {
 					if (Array.isArray(args[a][key])) {
-						result[key] = copyArray(args[a][key]);
+						result[key] = copyArray(
+							args[a][key] as unknown[],
+						) as unknown as T[typeof key];
 					} else {
-						result[key] = copyObject(args[a][key]);
+						result[key] = copyObject(
+							args[a][key] as Record<string, unknown>,
+						) as unknown as T[typeof key];
 					}
 				} else {
-					result[key] = args[a][key];
+					result[key] = args[a][key] as T[typeof key];
 				}
 			}
 		}
@@ -887,25 +1025,18 @@ function copyObject(...args) {
 	return result;
 }
 
-function map(array, func) {
-	/**
-	 * Returns an array containing the result of calling func on each item
-	 * in the input array.
-	 */
-	const result = [];
+function map<T, U>(array: T[], func: (item: T) => U): U[] {
+	const result: U[] = [];
 	for (let i = 0; i < array.length; i++) {
 		result[i] = func(array[i]);
 	}
 	return result;
 }
 
-function shuffle(array) {
-	/**
-	 * Shuffles the given array to be in a random order.
-	 */
+function shuffle<T>(array: T[]): T[] {
 	let currentIndex = array.length;
-	let temporaryValue;
-	let randomIndex;
+	let temporaryValue: T;
+	let randomIndex: number;
 
 	while (0 !== currentIndex) {
 		randomIndex = Math.floor(Math.random() * currentIndex);
@@ -919,14 +1050,11 @@ function shuffle(array) {
 	return array;
 }
 
-function parseQueryString(qs) {
-	/**
-	 * Parses a query string (a=b&c=d) into an object.
-	 */
-	const query = {};
+function parseQueryString(qs: string): Record<string, string | boolean> {
+	const query: Record<string, string | boolean> = {};
 	const split = qs.split("&");
-	let valueSplit;
-	let i;
+	let valueSplit: string[];
+	let i: number;
 
 	for (i = 0; i < split.length; i++) {
 		valueSplit = split[i].split("=");
