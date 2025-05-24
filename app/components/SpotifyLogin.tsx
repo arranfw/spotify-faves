@@ -24,7 +24,7 @@ const getCodeChallenge = async () => base64encode(await sha256(codeVerifier));
 
 export const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
 export const REDIRECT_URI =
-	import.meta.env.REDIRECT_URI || "http://127.0.0.1:5173/callback";
+	import.meta.env.VITE_REDIRECT_URI || "http://127.0.0.1:5173/callback";
 export const SCOPES = [
 	"user-read-private",
 	"user-read-email",
