@@ -1,6 +1,6 @@
-import type { Route } from "./+types/home";
-import { Welcome } from "../welcome/welcome";
 import { SavedTracks } from "../components/SavedTracks";
+import { Welcome } from "../welcome/welcome";
+import type { Route } from "./+types/home";
 
 export function meta() {
 	return [

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Picker, type PickerStateData } from "~/utils/picker";
 
 interface Track {
 	added_at: string;
 	track: {
+		id: string;
 		name: string;
 		artists: Array<{
 			name: string;
@@ -20,6 +22,7 @@ export function SavedTracks() {
 	const [tracks, setTracks] = useState<Track[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
+	const [picker, setPicker] = useState<PickerStateData>();
 
 	useEffect(() => {
 		const fetchTracks = async () => {
@@ -46,6 +49,15 @@ export function SavedTracks() {
 
 				const data = await response.json();
 				setTracks(data.items);
+				setPicker(
+					new Picker({
+						items: data.items.map((song) => ({
+							id: song.track.id,
+							name: song.track.name,
+							image: song.track.album.images[0].url,
+						})),
+					}),
+				);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to fetch tracks");
 			} finally {
@@ -55,6 +67,8 @@ export function SavedTracks() {
 
 		fetchTracks();
 	}, []);
+
+	console.log(picker);
 
 	if (loading) {
 		return (
@@ -76,32 +90,40 @@ export function SavedTracks() {
 		<div className="container mx-auto px-4 py-8">
 			<h1 className="text-2xl font-bold mb-6">Your Saved Tracks</h1>
 			<div className="grid gap-4">
-				{tracks.map((item, index) => (
-					<div
-						key={`${item.track.name}-${index}`}
-						className="flex items-center gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow"
-					>
-						{item.track.album.images[0] && (
-							<img
-								src={item.track.album.images[0].url}
-								alt={`${item.track.name} album cover`}
-								className="w-16 h-16 rounded"
-							/>
-						)}
-						<div className="flex-1">
-							<h2 className="text-lg font-semibold">{item.track.name}</h2>
-							<p className="text-gray-600 dark:text-gray-300">
-								{item.track.artists.map((artist) => artist.name).join(", ")}
-							</p>
-							<p className="text-sm text-gray-500 dark:text-gray-400">
-								{item.track.album.name}
-							</p>
+				<button>Pick</button>
+				<button>Pass</button>
+				<button>Undo</button>
+				<button>Redo</button>
+				{tracks
+					.filter((item) =>
+						picker?.state.arrays.evaluating.includes(item.track.id),
+					)
+					.map((item, index) => (
+						<div
+							key={`${item.track.name}-${index}`}
+							className="flex items-center gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow"
+						>
+							{item.track.album.images[0] && (
+								<img
+									src={item.track.album.images[0].url}
+									alt={`${item.track.name} album cover`}
+									className="w-16 h-16 rounded"
+								/>
+							)}
+							<div className="flex-1">
+								<h2 className="text-lg font-semibold">{item.track.name}</h2>
+								<p className="text-gray-600 dark:text-gray-300">
+									{item.track.artists.map((artist) => artist.name).join(", ")}
+								</p>
+								<p className="text-sm text-gray-500 dark:text-gray-400">
+									{item.track.album.name}
+								</p>
+							</div>
+							<div className="text-sm text-gray-500 dark:text-gray-400">
+								{new Date(item.added_at).toLocaleDateString()}
+							</div>
 						</div>
-						<div className="text-sm text-gray-500 dark:text-gray-400">
-							{new Date(item.added_at).toLocaleDateString()}
-						</div>
-					</div>
-				))}
+					))}
 			</div>
 		</div>
 	);
