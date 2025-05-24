@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { REDIRECT_URI, SPOTIFY_CLIENT_ID } from "~/components/SpotifyLogin";
 
 interface TokenResponse {
