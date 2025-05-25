@@ -6,7 +6,8 @@ import {
 } from "@react-router/dev/routes";
 
 export default [
-	route("spotify-favs", "routes/home.tsx", [
+	...prefix("spotify-faves", [
+		index("routes/home.tsx"),
 		route("callback", "routes/callback.tsx"),
 	]),
 ] satisfies RouteConfig;

@@ -852,6 +852,8 @@ Picker.prototype.saveState = function () {
 
 Picker.prototype.loadState = function (): PickerStateData | null {
 	let state: PickerStateData | null = null;
+	console.log(localStorage, JSON, this.options.localStorageKey);
+
 	if (this.options.loadState) {
 		state = this.options.loadState.call(this);
 	} else if (localStorage && JSON && this.options.localStorageKey) {

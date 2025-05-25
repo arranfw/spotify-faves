@@ -95,6 +95,7 @@ export function SavedTracks() {
 							name: song.track.name,
 							image: song.track.album.images[0].url,
 						})),
+						localStorageKey: "spotify-faves-state",
 					}),
 				);
 			} catch (err) {
