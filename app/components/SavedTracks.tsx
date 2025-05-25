@@ -136,6 +136,10 @@ export function SavedTracks() {
 		SONG_COUNT - foundFavorites.length - eliminated.length - 1,
 	);
 
+	const reset = () => {
+		picker.reset();
+	};
+
 	return (
 		<div className="container mx-auto px-4 py-8">
 			<h1 className="text-2xl font-bold mb-6">Your Saved Tracks</h1>
@@ -199,6 +203,14 @@ export function SavedTracks() {
 						))}
 				</div>
 			</div>
+			<div className="mb-10" />
+			<button
+				type="button"
+				className="text-lg py-1 px-4 border rounded bg-red-800"
+				onClick={reset}
+			>
+				Reset
+			</button>
 		</div>
 	);
 }
